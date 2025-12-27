@@ -665,9 +665,23 @@ html, body {
     color: #e5e5e5; border: 1px solid var(--glass-border); margin: 0;
     white-space: pre-wrap; word-break: break-word;
 }
+
+/* Loading State Enhancements */
 .loading-state {
     color: var(--text-secondary); display: flex; align-items: center; gap: 12px; 
     justify-content: center; padding: 60px 0; font-size: 1.1rem;
+}
+
+.loading-text-cycle {
+    animation: fadeInOutCycle 2s infinite ease-in-out;
+    min-width: 200px;
+    text-align: left;
+}
+
+@keyframes fadeInOutCycle {
+    0% { opacity: 0.3; transform: translateY(2px); }
+    50% { opacity: 1; transform: translateY(0px); }
+    100% { opacity: 0.3; transform: translateY(-2px); }
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }

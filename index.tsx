@@ -30,6 +30,15 @@ import {
     WarningIcon
 } from './components/Icons';
 
+const VARIATION_LOADING_MESSAGES = [
+    "Conceptualizing directions...",
+    "Drafting material logic...",
+    "Simulating physics...",
+    "Rendering previews...",
+    "Refining visual language...",
+    "Exploring metaphors..."
+];
+
 function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionIndex, setCurrentSessionIndex] = useState<number>(-1);
@@ -49,6 +58,7 @@ function App() {
 
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [componentVariations, setComponentVariations] = useState<ComponentVariation[]>([]);
+  const [variationLoadingIndex, setVariationLoadingIndex] = useState(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const gridScrollRef = useRef<HTMLDivElement>(null);
@@ -56,6 +66,16 @@ function App() {
   useEffect(() => {
       inputRef.current?.focus();
   }, []);
+
+  // Cycle variation loading messages
+  const isLoadingDrawer = isLoading && drawerState.mode === 'variations' && componentVariations.length === 0;
+  useEffect(() => {
+      if (!isLoadingDrawer) return;
+      const interval = setInterval(() => {
+          setVariationLoadingIndex(prev => (prev + 1) % VARIATION_LOADING_MESSAGES.length);
+      }, 2000);
+      return () => clearInterval(interval);
+  }, [isLoadingDrawer]);
 
   // Fix for mobile: reset scroll when focusing an item to prevent "overscroll" state
   useEffect(() => {
@@ -440,8 +460,6 @@ Return ONLY RAW HTML. No markdown fences.
       }
   }, [currentSessionIndex, focusedArtifactIndex]);
 
-  const isLoadingDrawer = isLoading && drawerState.mode === 'variations' && componentVariations.length === 0;
-
   const hasStarted = sessions.length > 0 || isLoading;
   const currentSession = sessions[currentSessionIndex];
 
@@ -478,7 +496,9 @@ Return ONLY RAW HTML. No markdown fences.
             {isLoadingDrawer && (
                  <div className="loading-state">
                      <ThinkingIcon /> 
-                     Designing variations...
+                     <span className="loading-text-cycle">
+                        {VARIATION_LOADING_MESSAGES[variationLoadingIndex]}
+                     </span>
                  </div>
             )}
 
