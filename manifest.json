@@ -1,16 +1,36 @@
-
 {
+  "id": "com.flashui.studio",
   "short_name": "Flash UI",
-  "name": "Flash UI Component Builder",
+  "name": "Flash UI: AI Design Studio",
+  "description": "Professional AI workspace for generating production-grade UI components in real-time.",
+  "lang": "en-US",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "minimal-ui"],
+  "theme_color": "#09090b",
+  "background_color": "#09090b",
+  "orientation": "any",
+  "categories": ["productivity", "developer tools", "design"],
   "icons": [
     {
       "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzA5MDkwYiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9IjI1NiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj7imDwvdGV4dD48L3N2Zz4=",
       "type": "image/svg+xml",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgZmlsbD0iIzA5MDkwYiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LXNpemU9Ijk2IiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuKYvDwvdGV4dD48L3N2Zz4=",
+      "type": "image/svg+xml",
+      "sizes": "192x192"
     }
   ],
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#09090b",
-  "background_color": "#09090b"
+  "shortcuts": [
+    {
+      "name": "Open Vault",
+      "short_name": "Vault",
+      "url": "/?open=vault",
+      "description": "Manage your secure API keys"
+    }
+  ]
 }

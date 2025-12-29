@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-// Refactored for PWA/Persistence by Senior AI Architect
 import { GoogleGenAI } from '@google/genai';
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
@@ -13,10 +12,13 @@ import { Artifact, Session, ComponentVariation } from './types';
 import { INITIAL_PLACEHOLDERS } from './constants';
 import { generateId } from './utils';
 
+import { StorageProvider, useStorage } from './contexts/StorageContext';
 import DottedGlowBackground from './components/DottedGlowBackground';
 import ArtifactCard from './components/ArtifactCard';
 import SideDrawer from './components/SideDrawer';
 import Terminal from './components/Terminal';
+import KeyManager from './components/KeyManager';
+import GlobalLoadingIndicator from './components/GlobalLoading';
 import { 
     ThinkingIcon, 
     CodeIcon, 
@@ -31,30 +33,18 @@ import {
     PlusIcon
 } from './components/Icons';
 
-const VARIATION_LOADING_MESSAGES = [
-    "Analyzing design systems...",
-    "Drafting architectural logic...",
-    "Optimizing responsive breakpoints...",
-    "Refining visual hierarchy...",
-    "Exploring creative metaphors..."
-];
-
 type UILibrary = 'vanilla' | 'mui' | 'chakra' | 'image';
 
-const STORAGE_KEY_SESSIONS = 'flash_ui_sessions_v1';
-const STORAGE_KEY_CONFIG = 'flash_ui_config_v1';
-
-function App() {
-  const [sessions, setSessions] = useState<Session[]>([]);
+function AppContent() {
+  const { sessions, config, addSession, updateArtifact, setLibrary, setHqMode, setGlobalLoading } = useStorage();
+  
   const [currentSessionIndex, setCurrentSessionIndex] = useState<number>(-1);
   const [focusedArtifactIndex, setFocusedArtifactIndex] = useState<number | null>(null);
   const [inputValue, setInputValue] = useState<string>('');
-  const [variationKeywords, setVariationKeywords] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [selectedLibrary, setSelectedLibrary] = useState<UILibrary>('vanilla');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const [isHighQualityImage, setIsHighQualityImage] = useState<boolean>(false);
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
+  const [isVaultOpen, setIsVaultOpen] = useState(false);
   
   const [drawerState, setDrawerState] = useState<{
       isOpen: boolean;
@@ -69,46 +59,59 @@ function App() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Persistence: Load on mount
   useEffect(() => {
-    const savedSessions = localStorage.getItem(STORAGE_KEY_SESSIONS);
-    if (savedSessions) {
-      try {
-        const parsed = JSON.parse(savedSessions);
-        setSessions(parsed);
-        if (parsed.length > 0) setCurrentSessionIndex(parsed.length - 1);
-      } catch (e) {
-        console.error("Failed to restore sessions", e);
-      }
+    if (sessions.length > 0 && currentSessionIndex === -1) {
+      setCurrentSessionIndex(sessions.length - 1);
     }
-
-    const savedConfig = localStorage.getItem(STORAGE_KEY_CONFIG);
-    if (savedConfig) {
-      try {
-        const { library, hq } = JSON.parse(savedConfig);
-        if (library) setSelectedLibrary(library);
-        if (hq !== undefined) setIsHighQualityImage(hq);
-      } catch (e) {}
-    }
-
-    // PWA Service Worker Registration
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(err => {
-          console.log('SW registration failed: ', err);
-        });
-      });
-    }
-  }, []);
-
-  // Persistence: Sync on change
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_SESSIONS, JSON.stringify(sessions));
   }, [sessions]);
 
+  // Handle cross-component vault opening and Shortcuts
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify({ library: selectedLibrary, hq: isHighQualityImage }));
-  }, [selectedLibrary, isHighQualityImage]);
+    const handleOpenVault = () => setIsVaultOpen(true);
+    window.addEventListener('open-vault', handleOpenVault);
+    
+    // Check for PWA shortcut param
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('open') === 'vault') {
+      setIsVaultOpen(true);
+      // Clean up URL
+      window.history.replaceState({}, document.title, "/");
+    }
+
+    return () => window.removeEventListener('open-vault', handleOpenVault);
+  }, []);
+
+  // PWA Service Worker Registration
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        setGlobalLoading(true, "Booting PWA...");
+        navigator.serviceWorker.register('/sw.js')
+          .then(registration => {
+            console.log('SW Registered with scope:', registration.scope);
+            setGlobalLoading(false);
+            
+            // Check for updates periodically
+            registration.onupdatefound = () => {
+              const installingWorker = registration.installing;
+              if (installingWorker) {
+                setGlobalLoading(true, "Updating System...");
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('New content is available; please refresh.');
+                    setGlobalLoading(false);
+                  }
+                };
+              }
+            };
+          })
+          .catch(err => {
+            console.log('SW registration failed: ', err);
+            setGlobalLoading(false);
+          });
+      });
+    }
+  }, [setGlobalLoading]);
 
   useEffect(() => {
       inputRef.current?.focus();
@@ -150,7 +153,6 @@ function App() {
       }
       if (library === 'vanilla' || library === 'image') return cleanCode;
       
-      // Templates for MUI/Chakra
       if (library === 'mui') return `<!DOCTYPE html><html><head><script src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><script src="https://unpkg.com/@mui/material@latest/umd/material-ui.production.min.js"></script><style>body { margin: 0; padding: 20px; }</style></head><body><div id="root"></div><script type="text/babel">const {ThemeProvider,createTheme,CssBaseline,Button,Container,Typography,Box,Card,CardContent,Grid,AppBar,Toolbar,IconButton,TextField}=MaterialUI;const theme=createTheme({palette:{mode:'light'},shape:{borderRadius:12}});${cleanCode} const root=ReactDOM.createRoot(document.getElementById('root'));root.render(<ThemeProvider theme={theme}><CssBaseline/><App/></ThemeProvider>);</script></body></html>`;
       
       if (library === 'chakra') return `<!DOCTYPE html><html><head><script src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><script src="https://unpkg.com/@chakra-ui/react@2.2.1/dist/chakra-ui.production.min.js"></script><style>body{margin:0;padding:20px;}</style></head><body><div id="root"></div><script type="text/babel">const {ChakraProvider,extendTheme,Box,Container,Heading,Text,Button,VStack,HStack,Stack,Flex,SimpleGrid}=ChakraUI;const theme=extendTheme({});${cleanCode} const root=ReactDOM.createRoot(document.getElementById('root'));root.render(<ChakraProvider theme={theme}><App/></ChakraProvider>);</script></body></html>`;
@@ -163,13 +165,13 @@ function App() {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
         if (library === 'image') {
-            const modelName = isHighQualityImage ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
-            if (isHighQualityImage) await handleApiKeySelection();
+            const modelName = config.hq ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
+            if (config.hq) await handleApiKeySelection();
 
             const response = await ai.models.generateContent({
                 model: modelName,
                 contents: { parts: [{ text: `${promptText}. Style: ${styleInstruction}` }] },
-                config: { imageConfig: { aspectRatio: "1:1", imageSize: isHighQualityImage ? "1K" : undefined } }
+                config: { imageConfig: { aspectRatio: "1:1", imageSize: config.hq ? "1K" : undefined } }
             });
 
             let imageUrl = '';
@@ -184,7 +186,7 @@ function App() {
 
             const imageHtml = `<!DOCTYPE html><html><head><style>body{margin:0;display:flex;align-items:center;justify-content:center;background:#09090b;height:100vh;overflow:hidden;}img{max-width:95%;max-height:95%;object-fit:contain;border-radius:24px;box-shadow:0 40px 100px rgba(0,0,0,0.8);animation:reveal 1s ease-out;}@keyframes reveal{from{opacity:0;transform:scale(0.92);filter:blur(20px);}to{opacity:1;transform:scale(1);filter:blur(0);}}</style></head><body><img src="${imageUrl}"/></body></html>`;
 
-            setSessions(prev => prev.map(sess => sess.id === sessionId ? { ...sess, artifacts: sess.artifacts.map(art => art.id === artifactId ? { ...art, html: imageHtml, status: 'complete' } : art) } : sess));
+            updateArtifact(sessionId, artifactId, { html: imageHtml, status: 'complete' });
             return;
         }
 
@@ -198,15 +200,22 @@ function App() {
         for await (const chunk of responseStream) {
             accumulated += chunk.text;
             const wrapped = wrapCodeInLibraryTemplate(accumulated, library);
-            setSessions(prev => prev.map(sess => sess.id === sessionId ? { ...sess, artifacts: sess.artifacts.map(art => art.id === artifactId ? { ...art, html: wrapped, status: 'streaming' } : art) } : sess));
+            updateArtifact(sessionId, artifactId, { html: wrapped, status: 'streaming' });
         }
         
         const final = wrapCodeInLibraryTemplate(accumulated, library);
-        setSessions(prev => prev.map(sess => sess.id === sessionId ? { ...sess, artifacts: sess.artifacts.map(art => art.id === artifactId ? { ...art, html: final, status: 'complete' } : art) } : sess));
+        updateArtifact(sessionId, artifactId, { html: final, status: 'complete' });
 
     } catch (e: any) {
         console.error(e);
-        setSessions(prev => prev.map(sess => sess.id === sessionId ? { ...sess, artifacts: sess.artifacts.map(art => art.id === artifactId ? { ...art, status: 'error', html: JSON.stringify({title:"Error", message: e.message || "Failed to generate.", solution:"Check your API key or connection."}) } : art) } : sess));
+        updateArtifact(sessionId, artifactId, { 
+          status: 'error', 
+          html: JSON.stringify({
+            title: "Error", 
+            message: e.message || "Failed to generate.", 
+            solution: "Check your API key or connection."
+          }) 
+        });
     }
   };
 
@@ -217,6 +226,7 @@ function App() {
     if (!manualPrompt) setInputValue('');
 
     setIsLoading(true);
+    setGlobalLoading(true, "Designing Concepts...");
     const sessionId = generateId();
     const placeholderArtifacts: Artifact[] = Array(3).fill(null).map((_, i) => ({
         id: `${sessionId}_${i}`,
@@ -226,7 +236,7 @@ function App() {
     }));
 
     const newSession = { id: sessionId, prompt: trimmed, timestamp: Date.now(), artifacts: placeholderArtifacts };
-    setSessions(prev => [...prev, newSession]);
+    addSession(newSession);
     setCurrentSessionIndex(sessions.length);
     setFocusedArtifactIndex(null);
 
@@ -240,12 +250,19 @@ function App() {
         let styles = ["Concept A", "Concept B", "Concept C"];
         try { styles = JSON.parse(styleResp.text?.match(/\[.*\]/s)?.[0] || '[]'); } catch {}
 
-        setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, artifacts: s.artifacts.map((art, i) => ({ ...art, styleName: styles[i] || art.styleName })) } : s));
-        await Promise.all(placeholderArtifacts.map((art, i) => generateArtifact(sessionId, art.id, styles[i], trimmed, selectedLibrary)));
+        styles.forEach((style, i) => {
+          updateArtifact(sessionId, `${sessionId}_${i}`, { styleName: style });
+        });
+
+        setGlobalLoading(true, "Streaming Archetypes...");
+        await Promise.all(placeholderArtifacts.map((art, i) => 
+          generateArtifact(sessionId, art.id, styles[i] || 'Concept', trimmed, config.library)
+        ));
     } finally {
         setIsLoading(false);
+        setGlobalLoading(false);
     }
-  }, [inputValue, isLoading, sessions.length, selectedLibrary, isHighQualityImage]);
+  }, [inputValue, isLoading, sessions.length, config.library, config.hq, addSession, updateArtifact, setGlobalLoading]);
 
   const handleRetryArtifact = useCallback((artifactId: string) => {
       const session = sessions.find(s => s.artifacts.some(a => a.id === artifactId));
@@ -253,13 +270,10 @@ function App() {
       const artifact = session.artifacts.find(a => a.id === artifactId);
       if (!artifact) return;
 
-      setSessions(prev => prev.map(s => s.id === session.id ? {
-          ...s,
-          artifacts: s.artifacts.map(a => a.id === artifactId ? { ...a, status: 'streaming', html: '' } : a)
-      } : s));
-
-      generateArtifact(session.id, artifact.id, artifact.styleName, session.prompt, selectedLibrary);
-  }, [sessions, selectedLibrary]);
+      updateArtifact(session.id, artifact.id, { status: 'streaming', html: '' });
+      setGlobalLoading(true, "Regenerating...");
+      generateArtifact(session.id, artifact.id, artifact.styleName, session.prompt, config.library).finally(() => setGlobalLoading(false));
+  }, [sessions, config.library, updateArtifact, setGlobalLoading]);
 
   const handleRegenerateSession = useCallback(() => {
       const current = sessions[currentSessionIndex];
@@ -288,6 +302,7 @@ function App() {
   return (
     <>
         <DottedGlowBackground />
+        <GlobalLoadingIndicator />
         <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit ${hasStarted ? 'hide-on-mobile' : ''}`}>created by @ammaar</a>
 
         <SideDrawer isOpen={drawerState.isOpen} onClose={() => setDrawerState(s => ({...s, isOpen: false}))} title={drawerState.title}>
@@ -328,8 +343,8 @@ function App() {
                 ))}
             </div>
 
-            {hasStarted && (currentSessionIndex > 0 || (focusedArtifactIndex && focusedArtifactIndex > 0)) && <button className="nav-handle left" onClick={prevItem}><ArrowLeftIcon /></button>}
-            {hasStarted && (currentSessionIndex < sessions.length - 1 || (focusedArtifactIndex !== null && focusedArtifactIndex < 2)) && <button className="nav-handle right" onClick={nextItem}><ArrowRightIcon /></button>}
+            {hasStarted && (currentSessionIndex > 0 || (focusedArtifactIndex && focusedArtifactIndex > 0)) && <button className="nav-handle left" onClick={prevItem} aria-label="Previous Session"><ArrowLeftIcon /></button>}
+            {hasStarted && (currentSessionIndex < sessions.length - 1 || (focusedArtifactIndex !== null && focusedArtifactIndex < 2)) && <button className="nav-handle right" onClick={nextItem} aria-label="Next Session"><ArrowRightIcon /></button>}
 
             <div className={`action-bar ${focusedArtifactIndex !== null ? 'visible' : (hasStarted && !isLoading ? 'visible' : '')}`}>
                  <div className="active-prompt-label">{currentSession?.prompt}</div>
@@ -354,16 +369,16 @@ function App() {
             <div className="floating-input-container">
                 <div className={`input-wrapper ${isLoading ? 'loading' : ''}`}>
                     <div className="library-selector">
-                        <button className={`lib-btn ${selectedLibrary === 'vanilla' ? 'active' : ''}`} onClick={() => setSelectedLibrary('vanilla')}>F</button>
-                        <button className={`lib-btn ${selectedLibrary === 'mui' ? 'active' : ''}`} onClick={() => setSelectedLibrary('mui')}>M</button>
-                        <button className={`lib-btn ${selectedLibrary === 'chakra' ? 'active' : ''}`} onClick={() => setSelectedLibrary('chakra')}>C</button>
-                        <button className={`lib-btn ${selectedLibrary === 'image' ? 'active' : ''}`} onClick={() => setSelectedLibrary('image')}>I</button>
+                        <button className={`lib-btn ${config.library === 'vanilla' ? 'active' : ''}`} onClick={() => setLibrary('vanilla')}>F</button>
+                        <button className={`lib-btn ${config.library === 'mui' ? 'active' : ''}`} onClick={() => setLibrary('mui')}>M</button>
+                        <button className={`lib-btn ${config.library === 'chakra' ? 'active' : ''}`} onClick={() => setLibrary('chakra')}>C</button>
+                        <button className={`lib-btn ${config.library === 'image' ? 'active' : ''}`} onClick={() => setLibrary('image')}>I</button>
                     </div>
 
-                    {selectedLibrary === 'image' && (
+                    {config.library === 'image' && (
                         <div className="hq-toggle-box">
                             <span className="hq-label">HQ</span>
-                            <input type="checkbox" checked={isHighQualityImage} onChange={(e) => setIsHighQualityImage(e.target.checked)} />
+                            <input type="checkbox" checked={config.hq} onChange={(e) => setHqMode(e.target.checked)} />
                         </div>
                     )}
 
@@ -376,14 +391,37 @@ function App() {
                 </div>
             </div>
 
-            <button className="terminal-toggle" onClick={() => setIsTerminalOpen(true)} aria-label="Open Terminal">
-              <CodeIcon />
-            </button>
+            <div className="utility-bar">
+                <button className="utility-btn" onClick={() => setIsVaultOpen(true)} aria-label="Open Vault">
+                    <SparklesIcon /> <span>Vault</span>
+                </button>
+                <button className="utility-btn" onClick={() => setIsTerminalOpen(true)} aria-label="Open Terminal">
+                    <CodeIcon /> <span>Terminal</span>
+                </button>
+            </div>
+
             <Terminal isOpen={isTerminalOpen} onClose={() => setIsTerminalOpen(false)} />
+            <KeyManager isOpen={isVaultOpen} onClose={() => setIsVaultOpen(false)} />
         </div>
     </>
   );
 }
+
+function App() {
+  return (
+    <StorageProvider>
+      <AppContent />
+    </StorageProvider>
+  );
+}
+
+const VARIATION_LOADING_MESSAGES = [
+    "Analyzing design systems...",
+    "Drafting architectural logic...",
+    "Optimizing responsive breakpoints...",
+    "Refining visual hierarchy...",
+    "Exploring creative metaphors..."
+];
 
 const root = ReactDOM.createRoot(document.getElementById('root')!);
 root.render(<App />);

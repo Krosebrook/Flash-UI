@@ -4,21 +4,28 @@
 ## Core Design Principles
 Flash UI is a **Local-First, Edge-Optimized** application. It prioritizes user privacy and performance by offloading all state management to the client's browser.
 
-### 1. Persistence Tier (Local-First)
-- **Sessions**: Stored in `localStorage` under `flash_ui_sessions_v1`. Large component code is kept in the browser's persistent store.
-- **Config**: Library preferences and quality toggles are synced locally.
-- **API Keys**: Keys for the Terminal (other LLMs) are never sent to our backend; they remain strictly in the user's `localStorage`.
+### 1. Persistence Tier (Multi-Layer Storage)
+To optimize for both speed and security, the application uses a tiered storage strategy:
+
+- **IndexedDB (via Dexie.js)**: 
+  - **API Keys**: Sensitive credentials for third-party providers (OpenAI, Anthropic, etc.) are stored in a structured IndexedDB table. This is more secure and performant than localStorage for binary/large data and prevents issues with size limits.
+  - **Schema**: Managed via Dexie versions for reliable migrations.
+  
+- **LocalStorage**:
+  - **Sessions**: Stored under `flash_ui_sessions_v1`. Contains recent prompts and generated artifact history.
+  - **Config**: UI preferences, library selection (Vanilla, MUI, Chakra), and quality settings.
 
 ### 2. PWA Layer
-- **Service Worker**: Caches the application shell (`sw.js`) for offline access.
-- **Manifest**: Allows "Add to Home Screen" on mobile/desktop for a native-like experience.
+- **Service Worker**: Caches the application shell (`sw.js`) for offline access. Implements a "cache-first" strategy for static assets.
+- **Manifest**: Declares the app as a standalone entity, enabling installation on mobile and desktop OS.
 
 ### 3. API Terminal
-The Terminal acts as a "Developer Console" for the app. It provides a CLI interface to manage environment variables without needing complex UI forms.
-- `setkey`: Securely write to local storage.
-- `reset`: Full purge of local state (Factory Reset).
+The Terminal acts as a "Developer Console" for the app. It provides a CLI interface to manage sensitive environment variables without needing complex UI forms or risking cloud exposure.
+- `setkey`: Asynchronously write to IndexedDB.
+- `listkeys`: Query local database for configured providers.
+- `reset`: Atomic wipe of all storage layers (LocalStorage + IndexedDB).
 
 ### 4. Generation Pipeline
-- **Orchestrator**: `App.handleSendMessage`
-- **Generators**: Specific logic for Vanilla, MUI, Chakra, and Images.
-- **Templates**: Code is injected into framework-specific HTML wrappers before being rendered in a sandboxed `iframe`.
+- **Orchestrator**: `App.handleSendMessage`. Handles the state machine for multi-artifact generation.
+- **Generators**: Specialized prompts for Vanilla HTML, MUI (React), Chakra UI (React), and Gemini Imaging models.
+- **Templates**: Code is dynamically injected into framework-specific HTML wrappers and rendered inside sandboxed `iframes` to prevent XSS and style leakage.
