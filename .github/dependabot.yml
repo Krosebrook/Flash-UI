@@ -1,0 +1,48 @@
+version: 2
+updates:
+  # Enable version updates for npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "Krosebrook"
+    labels:
+      - "dependencies"
+      - "automated"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+    # Group updates by dependency type
+    groups:
+      # Group all React-related updates
+      react:
+        patterns:
+          - "react*"
+      # Group all development dependencies
+      dev-dependencies:
+        dependency-type: "development"
+      # Group TypeScript and type definitions
+      types:
+        patterns:
+          - "@types/*"
+          - "typescript"
+    # Ignore specific dependencies if needed
+    ignore:
+      # Add any dependencies you want to ignore
+      # - dependency-name: "package-name"
+      #   versions: ["x.x.x"]
+  
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci:"
