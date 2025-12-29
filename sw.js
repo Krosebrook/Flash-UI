@@ -43,7 +43,13 @@ self.addEventListener('activate', (event) => {
 
 // Intelligent Fetch Handler
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  let url;
+  try {
+    url = new URL(event.request.url);
+  } catch (e) {
+    // If URL is invalid (e.g. data: or non-standard protocol), let network handle it normally
+    return;
+  }
 
   // 1. Handle ESM dependencies from esm.sh or unpkg (Stale-while-revalidate)
   if (url.hostname === 'esm.sh' || url.hostname === 'unpkg.com' || url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
@@ -51,9 +57,11 @@ self.addEventListener('fetch', (event) => {
       caches.open('runtime-dependencies').then((cache) => {
         return cache.match(event.request).then((cachedResponse) => {
           const fetchedResponse = fetch(event.request).then((networkResponse) => {
-            cache.put(event.request, networkResponse.clone());
+            if (networkResponse.ok) {
+              cache.put(event.request, networkResponse.clone());
+            }
             return networkResponse;
-          });
+          }).catch(() => cachedResponse);
           return cachedResponse || fetchedResponse;
         });
       })
