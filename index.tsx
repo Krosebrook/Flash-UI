@@ -85,7 +85,10 @@ function AppContent() {
     const handleBeforeInstallPrompt = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      setShowInstallBanner(true);
+      // Only show if not previously dismissed in this session
+      if (!sessionStorage.getItem('installBannerDismissed')) {
+        setShowInstallBanner(true);
+      }
     };
 
     const handleAppInstalled = () => {
@@ -112,32 +115,45 @@ function AppContent() {
     setShowInstallBanner(false);
   };
 
+  const handleDismissBanner = () => {
+    setShowInstallBanner(false);
+    sessionStorage.setItem('installBannerDismissed', 'true');
+  };
+
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         setGlobalLoading(true, "Booting PWA...");
         
-        // Use a relative path directly instead of new URL() to avoid origin-related construction failures
-        navigator.serviceWorker.register('./sw.js')
-          .then(registration => {
-            setGlobalLoading(false);
-            registration.onupdatefound = () => {
-              const installingWorker = registration.installing;
-              if (installingWorker) {
-                setGlobalLoading(true, "Updating System...");
-                installingWorker.onstatechange = () => {
-                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    setGlobalLoading(false);
-                    window.location.reload();
+        try {
+            // Construct absolute URL based on the current document origin.
+            const basePath = window.location.pathname.replace(/\/[^\/]*$/, '/');
+            const swUrl = `${window.location.origin}${basePath}sw.js`;
+
+            navigator.serviceWorker.register(swUrl)
+              .then(registration => {
+                setGlobalLoading(false);
+                registration.onupdatefound = () => {
+                  const installingWorker = registration.installing;
+                  if (installingWorker) {
+                    setGlobalLoading(true, "Updating System...");
+                    installingWorker.onstatechange = () => {
+                      if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                        setGlobalLoading(false);
+                        window.location.reload();
+                      }
+                    };
                   }
                 };
-              }
-            };
-          })
-          .catch(err => {
-            console.error('SW registration failed: ', err);
+              })
+              .catch(err => {
+                console.error('SW registration failed: ', err);
+                setGlobalLoading(false);
+              });
+        } catch (e) {
+            console.error('SW URL construction failed:', e);
             setGlobalLoading(false);
-          });
+        }
       });
     }
   }, [setGlobalLoading]);
@@ -284,7 +300,7 @@ function AppContent() {
           </div>
           <div className="install-actions">
             <button onClick={handleInstallClick} className="install-btn">Install Now</button>
-            <button onClick={() => setShowInstallBanner(false)} className="dismiss-btn" aria-label="Dismiss">&times;</button>
+            <button onClick={handleDismissBanner} className="dismiss-btn" aria-label="Dismiss">&times;</button>
           </div>
         </div>
       )}
