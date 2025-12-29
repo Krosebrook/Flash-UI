@@ -11,7 +11,6 @@ import { PlusIcon, WarningIcon, CodeIcon, RotateCcwIcon, CheckIcon, CopyIcon, Sp
 import { APIKey } from '../db';
 
 const VAULT_CONFIG_ID = '__vault_config__';
-const RECOVERY_CACHE_NAME = 'flash-ui-vault-meta';
 const RECOVERY_KEY_PATH = '/vault/recovery-payload.bin';
 
 interface KeyManagerProps {
@@ -49,7 +48,6 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
 
   const loadKeys = async () => {
     const allKeys = await db.apiKeys.toArray();
-    // Filter out internal config
     setKeys(allKeys.filter(k => k.provider !== VAULT_CONFIG_ID));
   };
 
@@ -62,7 +60,6 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
       const newMasterKey = generateMasterKey();
       const newRecoveryCode = generateRecoveryCode();
       
-      // Wrap Master Key with Passphrase for DB
       const wrappedForDB = await encrypt(newMasterKey, passphrase);
       await db.apiKeys.put({
         provider: VAULT_CONFIG_ID,
@@ -70,17 +67,17 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
         updatedAt: Date.now()
       });
 
-      // Wrap Master Key with Recovery Code for Obscured Cache
       const wrappedForRecovery = await encrypt(newMasterKey, newRecoveryCode);
-      const cache = await caches.open(RECOVERY_KEY_PATH);
+      const cache = await caches.open('flash-recovery');
       await cache.put(RECOVERY_KEY_PATH, new Response(wrappedForRecovery));
 
       setMasterKey(newMasterKey);
       setRecoveryCode(newRecoveryCode);
       setVaultState('setup_recovery');
+      setPassphrase(''); // Clear sensitive data
       setError('');
     } catch (e) {
-      setError("Vault initialization failed.");
+      setError("Initialization failed: Entropy source unavailable.");
     }
   };
 
@@ -92,10 +89,11 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
       const unwrap = await decrypt(config.encryptedKey, passphrase);
       setMasterKey(unwrap);
       setVaultState('unlocked');
+      setPassphrase(''); // Clear sensitive data
       loadKeys();
       setError('');
     } catch (e) {
-      setError("Invalid passphrase.");
+      setError("Incorrect Master Passphrase. Access denied.");
     }
   };
 
@@ -107,20 +105,20 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
 
   const handleRecover = async () => {
     try {
-      const cache = await caches.open(RECOVERY_KEY_PATH);
+      const cache = await caches.open('flash-recovery');
       const response = await cache.match(RECOVERY_KEY_PATH);
-      if (!response) throw new Error("Recovery payload missing.");
+      if (!response) throw new Error("Metadata missing.");
       
       const encryptedPayload = await response.text();
-      const unwrap = await decrypt(encryptedPayload, recoveryCode.toUpperCase());
+      const unwrap = await decrypt(encryptedPayload, recoveryCode.trim().toUpperCase());
       
       setMasterKey(unwrap);
-      setVaultState('unlocked'); // Successfully recovered access
+      setVaultState('unlocked');
+      setRecoveryCode(''); // Clear sensitive data
       loadKeys();
       setError('');
-      alert("Vault recovered. Please update your API keys or reset your passphrase via the Terminal.");
     } catch (e) {
-      setError("Invalid recovery code or missing metadata.");
+      setError("Invalid recovery code. Ensure metadata is present on this device.");
     }
   };
 
@@ -137,7 +135,7 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
       setNewKey('');
       loadKeys();
     } catch (e) {
-      setError("Key storage failed.");
+      setError("Encryption fault: Key could not be stored.");
     }
   };
 
@@ -152,7 +150,7 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
       const original = await decrypt(encrypted, masterKey);
       alert(`${original}`);
     } catch (e) {
-      setError("Failed to decrypt key.");
+      setError("Failed to decrypt key: Cipher mismatch.");
     }
   };
 

@@ -46,6 +46,10 @@ function AppContent() {
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   
+  // PWA Install State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
   const [drawerState, setDrawerState] = useState<{
       isOpen: boolean;
       mode: 'code' | 'variations' | null;
@@ -78,8 +82,30 @@ function AppContent() {
       window.history.replaceState({}, document.title, "/");
     }
 
-    return () => window.removeEventListener('open-vault', handleOpenVault);
+    // PWA Install Prompt Listener
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('open-vault', handleOpenVault);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
   }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      console.log('User accepted the install prompt');
+    }
+    setDeferredPrompt(null);
+    setShowInstallBanner(false);
+  };
 
   // PWA Service Worker Registration
   useEffect(() => {
@@ -304,6 +330,19 @@ function AppContent() {
         <DottedGlowBackground />
         <GlobalLoadingIndicator />
         <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit ${hasStarted ? 'hide-on-mobile' : ''}`}>created by @ammaar</a>
+
+        {showInstallBanner && (
+          <div className="install-banner">
+            <div className="install-content">
+              <SparklesIcon />
+              <span>Install Flash UI for a faster, offline-ready studio.</span>
+            </div>
+            <div className="install-actions">
+              <button onClick={handleInstallClick} className="install-btn">Install Now</button>
+              <button onClick={() => setShowInstallBanner(false)} className="dismiss-btn">&times;</button>
+            </div>
+          </div>
+        )}
 
         <SideDrawer isOpen={drawerState.isOpen} onClose={() => setDrawerState(s => ({...s, isOpen: false}))} title={drawerState.title}>
             {drawerState.mode === 'code' && (

@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-const CACHE_NAME = 'flash-ui-v1.2.0';
+const CACHE_NAME = 'flash-ui-v1.3.0';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/index.css',
   '/manifest.json',
+  '/offline.html',
   '/constants.ts',
   '/types.ts',
   '/utils.ts'
@@ -18,7 +19,7 @@ const STATIC_ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Pre-caching application shell');
+      console.log('[SW] Pre-caching application shell and offline fallback');
       return cache.addAll(STATIC_ASSETS);
     }).then(() => self.skipWaiting())
   );
@@ -65,15 +66,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Local Assets (Cache-First, fallback to network)
+  // 3. Local Assets (Cache-First, fallback to network/offline)
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) return cachedResponse;
       
       return fetch(event.request).catch(() => {
-        // Return a custom offline page or just fail if it's a critical missing asset
+        // Return custom offline page for navigation requests
         if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
+          return caches.match('/offline.html');
         }
       });
     })

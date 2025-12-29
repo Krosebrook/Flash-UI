@@ -4,9 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { db } from '../db';
-import { decrypt, encrypt } from '../utils/crypto';
 
 interface TerminalProps {
   isOpen: boolean;
@@ -40,189 +39,88 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose }) => {
   };
 
   const commands: Record<string, (args: string[], ctx: CommandContext) => Promise<void>> = {
-    help: async (args) => {
+    help: async () => {
       const list = [
-        "GENERAL COMMANDS:",
-        "  help          - Display this help menu",
-        "  clear         - Clear terminal screen",
-        "  whoami        - Display current session information",
-        "  exit          - Close the terminal",
-        "",
-        "VAULT & KEYS:",
-        "  listkeys      - List all configured API providers",
-        "  setkey        - Usage: setkey <provider> <key>",
-        "                  (Encrypts if vault is active/unlocked)",
-        "  getkey        - Usage: getkey <provider> (Masked display)",
-        "  rmkey         - Usage: rmkey <provider> (Delete a key)",
-        "",
-        "SYSTEM & DATABASE:",
-        "  tables        - List all IndexedDB tables",
-        "  getdb         - Usage: getdb <tableName> (View all table data)",
-        "  cleardb       - Usage: cleardb <tableName> (Wipe specific table)",
-        "  reset         - WIPE ALL LOCAL STORAGE & INDEXEDDB",
+        "GENERAL COMMANDS: help, clear, whoami, exit",
+        "VAULT: listkeys, setkey, getkey, rmkey",
+        "SYSTEM: tables, getdb, cleardb, reset",
       ];
       list.forEach(line => addToHistory(line));
     },
-    clear: async () => {
-      setHistory([]);
-    },
-    exit: async (_, { onClose }) => {
-      onClose();
-    },
+    clear: async () => { setHistory([]); },
+    exit: async (_, { onClose }) => { onClose(); },
     whoami: async () => {
       const keysCount = await db.apiKeys.count();
-      addToHistory(`User: Flash Designer`);
-      addToHistory(`Session: Local-Only (PWA)`);
-      addToHistory(`Storage: IndexedDB (Dexie) + LocalStorage`);
-      addToHistory(`Vault Status: ${keysCount} items stored`);
+      addToHistory(`User: Flash Designer | Session: PWA Local | Vault: ${keysCount} keys`);
     },
     tables: async () => {
-      const tableNames = db.tables.map(t => t.name);
-      addToHistory(`IndexedDB Tables: ${tableNames.join(', ')}`);
+      addToHistory(`Tables: ${db.tables.map(t => t.name).join(', ')}`);
     },
     getdb: async (args) => {
-      if (args.length < 1) {
-        addToHistory("Error: Usage: getdb <tableName>");
-        return;
-      }
-      const tableName = args[0];
-      const table = db.tables.find(t => t.name === tableName);
-      
-      if (!table) {
-        addToHistory(`Error: Table '${tableName}' not found.`);
-        return;
-      }
-
-      try {
-        const data = await table.toArray();
-        if (data.length === 0) {
-          addToHistory(`Table '${tableName}' is empty.`);
-        } else {
-          addToHistory(`Contents of '${tableName}':`);
-          data.forEach((item, idx) => {
-            // Mask sensitive fields in output
-            const safeItem = { ...item };
-            if ('key' in safeItem) safeItem.key = '********';
-            if ('encryptedKey' in safeItem) safeItem.encryptedKey = '[ENCRYPTED_PAYLOAD]';
-            addToHistory(`[${idx}] ${JSON.stringify(safeItem)}`);
-          });
-        }
-      } catch (err: any) {
-        addToHistory(`Error accessing database: ${err.message}`);
-      }
+      if (!args.length) { addToHistory("Usage: getdb <tableName>"); return; }
+      const table = db.tables.find(t => t.name === args[0]);
+      if (!table) { addToHistory(`Table '${args[0]}' not found.`); return; }
+      const data = await table.toArray();
+      data.forEach((item, idx) => addToHistory(`[${idx}] ${JSON.stringify(item).substring(0, 100)}...`));
     },
     cleardb: async (args) => {
-      if (args.length < 1) {
-        addToHistory("Error: Usage: cleardb <tableName>");
-        return;
-      }
-      const tableName = args[0];
-      const table = db.tables.find(t => t.name === tableName);
-      
-      if (!table) {
-        addToHistory(`Error: Table '${tableName}' not found.`);
-        return;
-      }
-
-      try {
-        await table.clear();
-        addToHistory(`Success: Table '${tableName}' has been cleared.`);
-      } catch (err: any) {
-        addToHistory(`Error clearing database: ${err.message}`);
-      }
+      if (!args.length) { addToHistory("Usage: cleardb <tableName>"); return; }
+      const table = db.tables.find(t => t.name === args[0]);
+      if (table) { await table.clear(); addToHistory(`Cleared ${args[0]}.`); }
     },
     listkeys: async () => {
       const all = await db.apiKeys.toArray();
       const providers = all.filter(k => k.provider !== '__vault_config__').map(k => k.provider);
-      if (providers.length === 0) {
-        addToHistory("No keys configured.");
-      } else {
-        addToHistory("Configured Providers:");
-        providers.forEach(p => addToHistory(`  - ${p}`));
-      }
+      addToHistory(providers.length ? `Providers: ${providers.join(', ')}` : "No keys found.");
     },
     setkey: async (args) => {
-      if (args.length < 2) {
-        addToHistory("Error: Usage: setkey <provider> <key>");
-        return;
-      }
-      const [provider, key] = args;
-      const normalized = provider.toLowerCase();
-      
-      try {
-        const config = await db.apiKeys.get('__vault_config__');
-        if (config) {
-           addToHistory("Notice: Vault is initialized. Use the Vault UI to manage encrypted keys securely.");
-           return;
-        }
-
-        await db.apiKeys.put({
-          provider: normalized,
-          key: key,
-          updatedAt: Date.now()
-        });
-        addToHistory(`Success: Key for '${normalized}' saved.`);
-      } catch (err: any) {
-        addToHistory(`Error: ${err.message}`);
-      }
+      if (args.length < 2) { addToHistory("Usage: setkey <provider> <key>"); return; }
+      await db.apiKeys.put({ provider: args[0].toLowerCase(), key: args[1], updatedAt: Date.now() });
+      addToHistory(`Saved key for ${args[0]}.`);
     },
     getkey: async (args) => {
-      if (args.length < 1) {
-        addToHistory("Error: Usage: getkey <provider>");
-        return;
-      }
-      const provider = args[0].toLowerCase();
-      const entry = await db.apiKeys.get(provider);
-      
-      if (!entry) {
-        addToHistory(`Error: Provider '${provider}' not found.`);
-        return;
-      }
-
-      const val = entry.key || (entry.encryptedKey ? "[ENCRYPTED]" : "N/A");
-      const masked = val === "[ENCRYPTED]" ? val : `${val.substring(0, 4)}...${val.substring(val.length - 4)}`;
-      addToHistory(`${provider.toUpperCase()}: ${masked} (Updated: ${new Date(entry.updatedAt).toLocaleDateString()})`);
+      if (!args.length) { addToHistory("Usage: getkey <provider>"); return; }
+      const entry = await db.apiKeys.get(args[0].toLowerCase());
+      addToHistory(entry ? `${args[0].toUpperCase()}: ${entry.key ? '********' : '[ENCRYPTED]'}` : "Not found.");
     },
     rmkey: async (args) => {
-      if (args.length < 1) {
-        addToHistory("Error: Usage: rmkey <provider>");
-        return;
-      }
-      const provider = args[0].toLowerCase();
-      await db.apiKeys.delete(provider);
-      addToHistory(`Deleted: Key for '${provider}'.`);
+      if (!args.length) { addToHistory("Usage: rmkey <provider>"); return; }
+      await db.apiKeys.delete(args[0].toLowerCase());
+      addToHistory(`Removed ${args[0]}.`);
     },
     reset: async () => {
-      addToHistory("WARNING: System reset initiated...");
       localStorage.clear();
       await db.apiKeys.clear();
-      addToHistory("SUCCESS: All local databases and configurations have been purged.");
-      setTimeout(() => window.location.reload(), 1500);
+      addToHistory("System wiped. Reloading...");
+      setTimeout(() => window.location.reload(), 1000);
     }
   };
 
   const handleCommand = async (cmdString: string) => {
     const trimmed = cmdString.trim();
     if (!trimmed) return;
-
     setCommandHistory(prev => [trimmed, ...prev]);
     setHistoryIndex(-1);
     addToHistory(`$ ${trimmed}`);
-
     const [cmd, ...args] = trimmed.split(/\s+/);
     const commandFn = commands[cmd.toLowerCase()];
-
-    if (commandFn) {
-      await commandFn(args, { setHistory, onClose });
-    } else {
-      addToHistory(`Command not found: ${cmd}. Type 'help' for options.`);
-    }
+    if (commandFn) await commandFn(args, { setHistory, onClose });
+    else addToHistory(`Unknown command: ${cmd}. Type 'help'.`);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleCommand(input);
       setInput("");
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      const matches = Object.keys(commands).filter(c => c.startsWith(input.toLowerCase()));
+      if (matches.length === 1) {
+        setInput(matches[0]);
+      } else if (matches.length > 1) {
+        addToHistory(`$ ${input}`);
+        addToHistory(matches.join('  '));
+      }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       const nextIndex = historyIndex + 1;
@@ -254,7 +152,7 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose }) => {
             <span className="dot yellow"></span>
             <span className="dot green"></span>
           </div>
-          <span className="terminal-title">flash-terminal — 80x24</span>
+          <span className="terminal-title">flash-terminal</span>
           <button className="terminal-close" onClick={onClose}>&times;</button>
         </div>
         <div className="terminal-body" ref={scrollRef}>

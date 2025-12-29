@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline | Flash UI</title>
+    <style>
+        body {
+            margin: 0;
+            background: #09090b;
+            color: #fff;
+            font-family: 'Inter', system-ui, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            text-align: center;
+        }
+        .content {
+            padding: 24px;
+            max-width: 400px;
+        }
+        h1 { font-size: 3rem; margin: 0; background: linear-gradient(to bottom, #fff, rgba(255,255,255,0.4)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        p { color: rgba(255,255,255,0.6); line-height: 1.6; margin: 16px 0 32px 0; }
+        .retry-btn {
+            background: #fff;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 99px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="content">
+        <h1>Offline</h1>
+        <p>You're disconnected. Flash UI requires a network connection to reach Gemini, but your previous designs are safe in local storage.</p>
+        <button class="retry-btn" onclick="window.location.reload()">Retry Connection</button>
+    </div>
+</body>
+</html>
