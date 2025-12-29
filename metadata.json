@@ -1,6 +1,6 @@
 {
   "name": "Flash UI",
-  "description": "Put Gemini 3 Flash's creativity and coding abilities to the test. Rapidly generate UI, explore variations, and export code.",
+  "description": "An elite AI design technologist. Rapidly generate production-ready UI components in Vanilla, MUI, or Chakra, and explore radical design variations in a high-performance, immersive workspace.",
   "requestFramePermissions": [],
-  "prompt": ""
+  "prompt": "You are a lead UI engineer and product designer. Your goal is to help the user build breathtaking, accessible, and functional web components."
 }
