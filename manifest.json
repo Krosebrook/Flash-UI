@@ -4,8 +4,8 @@
   "name": "Flash UI: AI Design Studio",
   "description": "Professional AI workspace for generating production-grade UI components in real-time.",
   "lang": "en-US",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "minimal-ui"],
   "theme_color": "#09090b",
@@ -29,7 +29,7 @@
     {
       "name": "Open Vault",
       "short_name": "Vault",
-      "url": "/?open=vault",
+      "url": "./?open=vault",
       "description": "Manage your secure API keys"
     }
   ]

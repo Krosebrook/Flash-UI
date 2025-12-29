@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -41,7 +40,7 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose }) => {
   const commands: Record<string, (args: string[], ctx: CommandContext) => Promise<void>> = {
     help: async () => {
       const list = [
-        "GENERAL COMMANDS: help, clear, whoami, exit",
+        "GENERAL: help, clear, whoami, exit",
         "VAULT: listkeys, setkey, getkey, rmkey",
         "SYSTEM: tables, getdb, cleardb, reset",
       ];
@@ -51,48 +50,33 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose }) => {
     exit: async (_, { onClose }) => { onClose(); },
     whoami: async () => {
       const keysCount = await db.apiKeys.count();
-      addToHistory(`User: Flash Designer | Session: PWA Local | Vault: ${keysCount} keys`);
+      addToHistory(`Identity: Designer | Environment: Browser-Edge | Vault: ${keysCount} items`);
     },
     tables: async () => {
-      addToHistory(`Tables: ${db.tables.map(t => t.name).join(', ')}`);
+      addToHistory(`Local Tables: ${db.tables.map(t => t.name).join(', ')}`);
     },
     getdb: async (args) => {
       if (!args.length) { addToHistory("Usage: getdb <tableName>"); return; }
       const table = db.tables.find(t => t.name === args[0]);
-      if (!table) { addToHistory(`Table '${args[0]}' not found.`); return; }
+      if (!table) { addToHistory(`Error: Table '${args[0]}' not found.`); return; }
       const data = await table.toArray();
-      data.forEach((item, idx) => addToHistory(`[${idx}] ${JSON.stringify(item).substring(0, 100)}...`));
+      data.forEach((item, idx) => addToHistory(`[${idx}] ${JSON.stringify(item).substring(0, 80)}...`));
     },
     cleardb: async (args) => {
       if (!args.length) { addToHistory("Usage: cleardb <tableName>"); return; }
       const table = db.tables.find(t => t.name === args[0]);
-      if (table) { await table.clear(); addToHistory(`Cleared ${args[0]}.`); }
+      if (table) { await table.clear(); addToHistory(`Success: Cleared ${args[0]}.`); }
     },
     listkeys: async () => {
       const all = await db.apiKeys.toArray();
       const providers = all.filter(k => k.provider !== '__vault_config__').map(k => k.provider);
-      addToHistory(providers.length ? `Providers: ${providers.join(', ')}` : "No keys found.");
-    },
-    setkey: async (args) => {
-      if (args.length < 2) { addToHistory("Usage: setkey <provider> <key>"); return; }
-      await db.apiKeys.put({ provider: args[0].toLowerCase(), key: args[1], updatedAt: Date.now() });
-      addToHistory(`Saved key for ${args[0]}.`);
-    },
-    getkey: async (args) => {
-      if (!args.length) { addToHistory("Usage: getkey <provider>"); return; }
-      const entry = await db.apiKeys.get(args[0].toLowerCase());
-      addToHistory(entry ? `${args[0].toUpperCase()}: ${entry.key ? '********' : '[ENCRYPTED]'}` : "Not found.");
-    },
-    rmkey: async (args) => {
-      if (!args.length) { addToHistory("Usage: rmkey <provider>"); return; }
-      await db.apiKeys.delete(args[0].toLowerCase());
-      addToHistory(`Removed ${args[0]}.`);
+      addToHistory(providers.length ? `Configured Providers: ${providers.join(', ')}` : "No keys found in vault.");
     },
     reset: async () => {
+      addToHistory("Initiating system wipe...");
       localStorage.clear();
       await db.apiKeys.clear();
-      addToHistory("System wiped. Reloading...");
-      setTimeout(() => window.location.reload(), 1000);
+      setTimeout(() => window.location.reload(), 1200);
     }
   };
 
@@ -118,8 +102,7 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose }) => {
       if (matches.length === 1) {
         setInput(matches[0]);
       } else if (matches.length > 1) {
-        addToHistory(`$ ${input}`);
-        addToHistory(matches.join('  '));
+        addToHistory(`$ ${input} [matches: ${matches.join(', ')}]`);
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
@@ -152,7 +135,7 @@ const Terminal: React.FC<TerminalProps> = ({ isOpen, onClose }) => {
             <span className="dot yellow"></span>
             <span className="dot green"></span>
           </div>
-          <span className="terminal-title">flash-terminal</span>
+          <span className="terminal-title">flash-cli v1.2</span>
           <button className="terminal-close" onClick={onClose}>&times;</button>
         </div>
         <div className="terminal-body" ref={scrollRef}>

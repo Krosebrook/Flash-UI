@@ -5,14 +5,14 @@
 
 const CACHE_NAME = 'flash-ui-v1.3.0';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/index.css',
-  '/manifest.json',
-  '/offline.html',
-  '/constants.ts',
-  '/types.ts',
-  '/utils.ts'
+  './',
+  './index.html',
+  './index.css',
+  './manifest.json',
+  './offline.html',
+  './constants.ts',
+  './types.ts',
+  './utils.ts'
 ];
 
 // Installation: Cache App Shell
@@ -74,7 +74,7 @@ self.addEventListener('fetch', (event) => {
       return fetch(event.request).catch(() => {
         // Return custom offline page for navigation requests
         if (event.request.mode === 'navigate') {
-          return caches.match('/offline.html');
+          return caches.match('./offline.html');
         }
       });
     })

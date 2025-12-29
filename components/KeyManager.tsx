@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -11,7 +10,8 @@ import { PlusIcon, WarningIcon, CodeIcon, RotateCcwIcon, CheckIcon, CopyIcon, Sp
 import { APIKey } from '../db';
 
 const VAULT_CONFIG_ID = '__vault_config__';
-const RECOVERY_KEY_PATH = '/vault/recovery-payload.bin';
+// Use relative path for recovery payload
+const RECOVERY_KEY_PATH = 'recovery-payload.bin';
 
 interface KeyManagerProps {
   isOpen: boolean;
@@ -33,17 +33,11 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
 
   const checkVaultStatus = useCallback(async () => {
     const config = await db.apiKeys.get(VAULT_CONFIG_ID);
-    if (!config) {
-      setVaultState('uninitialized');
-    } else {
-      setVaultState('locked');
-    }
+    setVaultState(config ? 'locked' : 'uninitialized');
   }, []);
 
   useEffect(() => {
-    if (isOpen) {
-      checkVaultStatus();
-    }
+    if (isOpen) checkVaultStatus();
   }, [isOpen, checkVaultStatus]);
 
   const loadKeys = async () => {
@@ -59,98 +53,77 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
     try {
       const newMasterKey = generateMasterKey();
       const newRecoveryCode = generateRecoveryCode();
-      
       const wrappedForDB = await encrypt(newMasterKey, passphrase);
-      await db.apiKeys.put({
-        provider: VAULT_CONFIG_ID,
-        encryptedKey: wrappedForDB,
-        updatedAt: Date.now()
-      });
-
+      await db.apiKeys.put({ provider: VAULT_CONFIG_ID, encryptedKey: wrappedForDB, updatedAt: Date.now() });
       const wrappedForRecovery = await encrypt(newMasterKey, newRecoveryCode);
       const cache = await caches.open('flash-recovery');
       await cache.put(RECOVERY_KEY_PATH, new Response(wrappedForRecovery));
-
       setMasterKey(newMasterKey);
       setRecoveryCode(newRecoveryCode);
       setVaultState('setup_recovery');
-      setPassphrase(''); // Clear sensitive data
+      setPassphrase(''); // SECURITY: Clear passphrase immediately
       setError('');
-    } catch (e) {
-      setError("Initialization failed: Entropy source unavailable.");
-    }
+    } catch (e) { setError("Initialization failed."); }
   };
 
   const handleUnlock = async () => {
     try {
       const config = await db.apiKeys.get(VAULT_CONFIG_ID);
-      if (!config?.encryptedKey) throw new Error("Vault corrupted.");
-      
+      if (!config?.encryptedKey) throw new Error();
       const unwrap = await decrypt(config.encryptedKey, passphrase);
       setMasterKey(unwrap);
       setVaultState('unlocked');
-      setPassphrase(''); // Clear sensitive data
+      setPassphrase(''); // SECURITY: Clear passphrase immediately
       loadKeys();
       setError('');
-    } catch (e) {
-      setError("Incorrect Master Passphrase. Access denied.");
-    }
-  };
-
-  const handleStartRecovery = () => {
-    setVaultState('recovering');
-    setRecoveryCode('');
-    setError('');
+    } catch (e) { setError("Incorrect Passphrase."); }
   };
 
   const handleRecover = async () => {
     try {
       const cache = await caches.open('flash-recovery');
       const response = await cache.match(RECOVERY_KEY_PATH);
-      if (!response) throw new Error("Metadata missing.");
-      
+      if (!response) throw new Error();
       const encryptedPayload = await response.text();
       const unwrap = await decrypt(encryptedPayload, recoveryCode.trim().toUpperCase());
-      
       setMasterKey(unwrap);
       setVaultState('unlocked');
-      setRecoveryCode(''); // Clear sensitive data
+      setRecoveryCode(''); // SECURITY: Clear recovery code immediately
       loadKeys();
       setError('');
-    } catch (e) {
-      setError("Invalid recovery code. Ensure metadata is present on this device.");
-    }
+    } catch (e) { setError("Invalid Recovery Code."); }
   };
 
   const handleAddKey = async () => {
     if (!newProvider || !newKey || !masterKey) return;
     try {
       const encrypted = await encrypt(newKey, masterKey);
-      await db.apiKeys.put({
-        provider: newProvider.toLowerCase(),
-        encryptedKey: encrypted,
-        updatedAt: Date.now()
+      await db.apiKeys.put({ 
+        provider: newProvider.toLowerCase(), 
+        encryptedKey: encrypted, 
+        updatedAt: Date.now() 
       });
       setNewProvider('');
       setNewKey('');
       loadKeys();
+      setError('');
     } catch (e) {
-      setError("Encryption fault: Key could not be stored.");
+      setError("Failed to add key.");
     }
   };
 
-  const handleDelete = async (provider: string) => {
+  const handleDeleteKey = async (provider: string) => {
     await db.apiKeys.delete(provider);
     loadKeys();
   };
 
-  const handleView = async (encrypted: string) => {
+  const handleViewKey = async (encrypted: string) => {
     if (!masterKey) return;
     try {
       const original = await decrypt(encrypted, masterKey);
-      alert(`${original}`);
+      alert(`Decrypted Key: ${original}`);
     } catch (e) {
-      setError("Failed to decrypt key: Cipher mismatch.");
+      setError("Decryption failed.");
     }
   };
 
@@ -167,7 +140,7 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
       <div className="key-manager-window" onClick={e => e.stopPropagation()}>
         <div className="terminal-header">
           <span>Vault: {vaultState.toUpperCase()}</span>
-          <button onClick={onClose}>&times;</button>
+          <button onClick={onClose} className="terminal-close">&times;</button>
         </div>
 
         <div className="key-manager-body">
@@ -175,7 +148,7 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
             <div className="unlock-screen">
               <div className="vault-icon"><SparklesIcon /></div>
               <h3>Initialize Secure Vault</h3>
-              <p>Set a master passphrase to protect all your API keys. Access is local-only and encrypted.</p>
+              <p>Set a master passphrase to protect your API keys. Encryption is handled entirely on-device.</p>
               <input 
                 type="password" 
                 placeholder="Choose Master Passphrase (8+ chars)" 
@@ -191,40 +164,40 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
           {vaultState === 'setup_recovery' && (
             <div className="unlock-screen">
               <div className="vault-icon" style={{color: '#4ade80'}}><CheckIcon /></div>
-              <h3>Vault Initialized</h3>
-              <p>Save this recovery code. If you forget your passphrase, this is the <strong>only way</strong> to recover your keys.</p>
+              <h3>Vault Ready</h3>
+              <p>IMPORTANT: Save this recovery code. If you forget your passphrase, this is the only way to recover access.</p>
               <div className="recovery-code-display" onClick={copyRecoveryCode}>
                 <code>{recoveryCode}</code>
                 {isCopied ? <CheckIcon /> : <CopyIcon />}
               </div>
-              <button className="unlock-btn" onClick={() => { setVaultState('unlocked'); loadKeys(); }}>Finish Setup</button>
+              <button className="unlock-btn" onClick={() => { setVaultState('unlocked'); loadKeys(); }}>Enter Studio</button>
             </div>
           )}
 
           {vaultState === 'locked' && (
             <div className="unlock-screen">
               <div className="vault-icon"><CodeIcon /></div>
-              <h3>Secure Vault Locked</h3>
-              <p>Enter your Master Passphrase to manage keys.</p>
+              <h3>Vault Locked</h3>
+              <p>Enter your Master Passphrase to access your keys.</p>
               <input 
                 type="password" 
-                placeholder="Master Passphrase" 
+                placeholder="Passphrase" 
                 value={passphrase} 
                 onChange={e => setPassphrase(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleUnlock()}
                 autoFocus
               />
               {error && <div className="error-text">{error}</div>}
-              <button className="unlock-btn" onClick={handleUnlock}>Unlock Vault</button>
-              <button className="recovery-link" onClick={handleStartRecovery}>Forgot passphrase?</button>
+              <button className="unlock-btn" onClick={handleUnlock}>Unlock</button>
+              <button className="recovery-link" onClick={() => setVaultState('recovering')}>Forgot passphrase?</button>
             </div>
           )}
 
           {vaultState === 'recovering' && (
             <div className="unlock-screen">
               <div className="vault-icon" style={{color: '#f472b6'}}><RotateCcwIcon /></div>
-              <h3>Vault Recovery</h3>
-              <p>Enter your 16-character recovery code (e.g., XXXX-XXXX-XXXX-XXXX).</p>
+              <h3>Recovery Mode</h3>
+              <p>Enter your 16-character recovery code.</p>
               <input 
                 type="text" 
                 placeholder="XXXX-XXXX-XXXX-XXXX" 
@@ -234,9 +207,9 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
                 autoFocus
               />
               {error && <div className="error-text">{error}</div>}
-              <div className="action-buttons" style={{marginTop: '20px'}}>
-                 <button className="unlock-btn" onClick={handleRecover}>Recover Vault</button>
-                 <button className="utility-btn" style={{background: 'transparent', border: 'none'}} onClick={() => setVaultState('locked')}>Cancel</button>
+              <div className="action-buttons" style={{marginTop: '16px'}}>
+                <button className="unlock-btn" onClick={handleRecover}>Recover Access</button>
+                <button className="utility-btn" style={{border:'none', background:'transparent'}} onClick={() => setVaultState('locked')}>Cancel</button>
               </div>
             </div>
           )}
@@ -245,7 +218,7 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
             <div className="manager-content">
               <div className="add-key-form">
                 <input 
-                  placeholder="Provider (e.g. OpenAI)" 
+                  placeholder="Provider (e.g. Gemini)" 
                   value={newProvider} 
                   onChange={e => setNewProvider(e.target.value)} 
                 />
@@ -256,7 +229,7 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
                   onChange={e => setNewKey(e.target.value)} 
                 />
                 <button onClick={handleAddKey} disabled={!newProvider || !newKey}>
-                  <PlusIcon /> Add
+                  <PlusIcon /> Add Key
                 </button>
               </div>
 
@@ -268,11 +241,11 @@ const KeyManager: React.FC<KeyManagerProps> = ({ isOpen, onClose }) => {
                     <div key={k.provider} className="key-item">
                       <div className="key-info">
                         <span className="key-provider">{k.provider}</span>
-                        <span className="key-date">Updated: {new Date(k.updatedAt).toLocaleDateString()}</span>
+                        <span className="key-date">Added: {new Date(k.updatedAt).toLocaleDateString()}</span>
                       </div>
                       <div className="key-actions">
-                        <button onClick={() => handleView(k.encryptedKey!)}>View</button>
-                        <button onClick={() => handleDelete(k.provider)} className="delete">Delete</button>
+                        <button onClick={() => handleViewKey(k.encryptedKey!)}>View</button>
+                        <button onClick={() => handleDeleteKey(k.provider)} className="delete">Delete</button>
                       </div>
                     </div>
                   ))
