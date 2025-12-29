@@ -125,35 +125,27 @@ function AppContent() {
       window.addEventListener('load', () => {
         setGlobalLoading(true, "Booting PWA...");
         
-        try {
-            // Construct absolute URL based on the current document origin.
-            const basePath = window.location.pathname.replace(/\/[^\/]*$/, '/');
-            const swUrl = `${window.location.origin}${basePath}sw.js`;
-
-            navigator.serviceWorker.register(swUrl)
-              .then(registration => {
-                setGlobalLoading(false);
-                registration.onupdatefound = () => {
-                  const installingWorker = registration.installing;
-                  if (installingWorker) {
-                    setGlobalLoading(true, "Updating System...");
-                    installingWorker.onstatechange = () => {
-                      if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                        setGlobalLoading(false);
-                        window.location.reload();
-                      }
-                    };
+        // Use standard relative path to avoid origin mismatch issues caused by manual URL construction
+        navigator.serviceWorker.register('./sw.js')
+          .then(registration => {
+            setGlobalLoading(false);
+            registration.onupdatefound = () => {
+              const installingWorker = registration.installing;
+              if (installingWorker) {
+                setGlobalLoading(true, "Updating System...");
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    setGlobalLoading(false);
+                    window.location.reload();
                   }
                 };
-              })
-              .catch(err => {
-                console.error('SW registration failed: ', err);
-                setGlobalLoading(false);
-              });
-        } catch (e) {
-            console.error('SW URL construction failed:', e);
+              }
+            };
+          })
+          .catch(err => {
+            console.error('SW registration failed: ', err);
             setGlobalLoading(false);
-        }
+          });
       });
     }
   }, [setGlobalLoading]);
