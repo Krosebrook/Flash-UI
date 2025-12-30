@@ -125,8 +125,10 @@ function AppContent() {
       window.addEventListener('load', () => {
         setGlobalLoading(true, "Booting PWA...");
         
-        // Use standard relative path to avoid origin mismatch issues caused by manual URL construction
-        navigator.serviceWorker.register('./sw.js')
+        // Force resolution against window.location to ignore <base> tags that cause origin mismatches
+        const swUrl = new URL('sw.js', window.location.href).href;
+
+        navigator.serviceWorker.register(swUrl)
           .then(registration => {
             setGlobalLoading(false);
             registration.onupdatefound = () => {
