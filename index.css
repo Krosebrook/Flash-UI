@@ -26,6 +26,55 @@ body, html {
     width: 100vw;
 }
 
+/* System Messages & Toast UI */
+.network-status-toast {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3000;
+    background: rgba(239, 68, 68, 0.9);
+    backdrop-filter: blur(12px);
+    padding: 10px 24px;
+    border-radius: 99px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    animation: slide-down 0.5s ease-out;
+}
+
+.system-update-banner {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 3000;
+    background: rgba(15, 15, 18, 0.95);
+    border: 1px solid var(--accent);
+    backdrop-filter: blur(24px);
+    padding: 8px 12px 8px 24px;
+    border-radius: 99px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 0.9rem;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+}
+
+.system-update-banner button {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 99px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
 /* Custom Tooltip System */
 [data-tooltip] {
     position: relative;
@@ -235,6 +284,11 @@ body, html {
     box-shadow: 0 0 40px rgba(255,255,255,0.15);
 }
 
+.surprise-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .artifact-card {
     flex: 1;
     max-width: 440px;
@@ -291,6 +345,11 @@ body, html {
     gap: 16px;
     transition: all 0.4s ease;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
+
+.input-wrapper.offline {
+    opacity: 0.6;
+    background: rgba(255, 0, 0, 0.05);
 }
 
 .input-wrapper:focus-within {
@@ -356,6 +415,10 @@ body, html {
     font-size: 1rem;
     outline: none;
     padding: 8px 0;
+}
+
+.input-wrapper input:disabled {
+    cursor: not-allowed;
 }
 
 .send-button {
@@ -432,6 +495,15 @@ body, html {
     opacity: 1;
     transform: translateY(0);
     pointer-events: auto;
+}
+
+.active-prompt-label {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 6px 16px;
+    border-radius: 99px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
 }
 
 .action-buttons {

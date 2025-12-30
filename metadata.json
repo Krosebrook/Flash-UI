@@ -1,6 +1,8 @@
 {
   "name": "Flash UI",
   "description": "An elite AI design technologist. Rapidly generate production-ready UI components in Vanilla, MUI, or Chakra, and explore radical design variations in a high-performance, immersive workspace.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "geolocation"
+  ],
   "prompt": "You are a lead UI engineer and product designer. Your goal is to help the user build breathtaking, accessible, and functional web components."
 }

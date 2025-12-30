@@ -4,10 +4,10 @@
 */
 
 import { GoogleGenAI } from '@google/genai';
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
 
-import { Artifact, Session, ComponentVariation } from './types';
+import { Artifact, Session } from './types';
 import { INITIAL_PLACEHOLDERS } from './constants';
 import { generateId } from './utils';
 
@@ -15,11 +15,8 @@ import { StorageProvider, useStorage } from './contexts/StorageContext';
 import DottedGlowBackground from './components/DottedGlowBackground';
 import ArtifactCard from './components/ArtifactCard';
 import SideDrawer from './components/SideDrawer';
-import Terminal from './components/Terminal';
-import KeyManager from './components/KeyManager';
 import GlobalLoadingIndicator from './components/GlobalLoading';
 import { 
-    ThinkingIcon, 
     CodeIcon, 
     SparklesIcon, 
     ArrowLeftIcon, 
@@ -29,8 +26,12 @@ import {
     CheckIcon,
     CopyIcon,
     RotateCcwIcon,
-    PlusIcon
+    WarningIcon
 } from './components/Icons';
+
+// Lazy load non-critical utility components
+const Terminal = lazy(() => import('./components/Terminal'));
+const KeyManager = lazy(() => import('./components/KeyManager'));
 
 type UILibrary = 'vanilla' | 'mui' | 'chakra' | 'image';
 
@@ -41,8 +42,76 @@ const LIBRARY_TOOLTIPS: Record<UILibrary, string> = {
   image: 'AI Image. Generate high-quality visual assets with Gemini.'
 };
 
+/**
+ * Custom Hook: usePWA
+ * Manages Service Worker lifecycle and Installation state
+ */
+function usePWA() {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // SW Registration with relative path safety
+    if ('serviceWorker' in navigator) {
+      const swPath = './sw.js';
+      navigator.serviceWorker.register(swPath)
+        .then(reg => {
+          reg.onupdatefound = () => {
+            const installingWorker = reg.installing;
+            if (installingWorker) {
+              installingWorker.onstatechange = () => {
+                if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  setUpdateAvailable(true);
+                }
+              };
+            }
+          };
+        })
+        .catch(err => console.debug('SW Registration skipped in this environment.'));
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const installApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setIsInstallable(false);
+      setDeferredPrompt(null);
+    }
+  };
+
+  return { isInstallable, isOffline, updateAvailable, installApp };
+}
+
 function AppContent() {
   const { sessions, config, addSession, updateArtifact, setLibrary, setHqMode, setGlobalLoading } = useStorage();
+  const { isInstallable, isOffline, updateAvailable, installApp } = usePWA();
   
   const [currentSessionIndex, setCurrentSessionIndex] = useState<number>(-1);
   const [focusedArtifactIndex, setFocusedArtifactIndex] = useState<number | null>(null);
@@ -52,10 +121,6 @@ function AppContent() {
   const [isTerminalOpen, setIsTerminalOpen] = useState(false);
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   
-  // PWA Install State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
-
   const [drawerState, setDrawerState] = useState<{
       isOpen: boolean;
       mode: 'code' | 'variations' | null;
@@ -66,102 +131,20 @@ function AppContent() {
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-switch placeholder for dynamic feel
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPlaceholderIndex((p) => (p + 1) % INITIAL_PLACEHOLDERS.length);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Update session index on new session
   useEffect(() => {
     if (sessions.length > 0 && currentSessionIndex === -1) {
       setCurrentSessionIndex(sessions.length - 1);
     }
   }, [sessions, currentSessionIndex]);
-
-  useEffect(() => {
-    const handleOpenVault = () => setIsVaultOpen(true);
-    window.addEventListener('open-vault', handleOpenVault);
-    
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('open') === 'vault') {
-      setIsVaultOpen(true);
-      window.history.replaceState({}, document.title, "/");
-    }
-
-    const handleBeforeInstallPrompt = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      // Only show if not previously dismissed in this session
-      if (!sessionStorage.getItem('installBannerDismissed')) {
-        setShowInstallBanner(true);
-      }
-    };
-
-    const handleAppInstalled = () => {
-      setShowInstallBanner(false);
-      setDeferredPrompt(null);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    return () => {
-      window.removeEventListener('open-vault', handleOpenVault);
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    console.debug(`Install outcome: ${outcome}`);
-    setDeferredPrompt(null);
-    setShowInstallBanner(false);
-  };
-
-  const handleDismissBanner = () => {
-    setShowInstallBanner(false);
-    sessionStorage.setItem('installBannerDismissed', 'true');
-  };
-
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        setGlobalLoading(true, "Booting PWA...");
-        
-        // Force resolution against window.location to ignore <base> tags that cause origin mismatches
-        const swUrl = new URL('sw.js', window.location.href).href;
-
-        navigator.serviceWorker.register(swUrl)
-          .then(registration => {
-            setGlobalLoading(false);
-            registration.onupdatefound = () => {
-              const installingWorker = registration.installing;
-              if (installingWorker) {
-                setGlobalLoading(true, "Updating System...");
-                installingWorker.onstatechange = () => {
-                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    setGlobalLoading(false);
-                    window.location.reload();
-                  }
-                };
-              }
-            };
-          })
-          .catch(err => {
-            console.error('SW registration failed: ', err);
-            setGlobalLoading(false);
-          });
-      });
-    }
-  }, [setGlobalLoading]);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPlaceholderIndex(prev => (prev + 1) % INITIAL_PLACEHOLDERS.length);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
 
   const handleApiKeySelection = async () => {
     // @ts-ignore
@@ -180,13 +163,22 @@ function AppContent() {
       cleanCode = lines.join('\n');
     }
     if (library === 'vanilla' || library === 'image') return cleanCode;
-    if (library === 'mui') return `<!DOCTYPE html><html><head><script src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><script src="https://unpkg.com/@mui/material@latest/umd/material-ui.production.min.js"></script><style>body { margin: 0; padding: 20px; }</style></head><body><div id="root"></div><script type="text/babel">const {ThemeProvider,createTheme,CssBaseline,Button,Container,Typography,Box,Card,CardContent,Grid,AppBar,Toolbar,IconButton,TextField}=MaterialUI;const theme=createTheme({palette:{mode:'light'},shape:{borderRadius:12}});${cleanCode} const root=ReactDOM.createRoot(document.getElementById('root'));root.render(<ThemeProvider theme={theme}><CssBaseline/><App/></ThemeProvider>);</script></body></html>`;
-    if (library === 'chakra') return `<!DOCTYPE html><html><head><script src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script src="https://unpkg.com/@babel/standalone/babel.min.js"></script><script src="https://unpkg.com/@chakra-ui/react@2.2.1/dist/chakra-ui.production.min.js"></script><style>body{margin:0;padding:20px;}</style></head><body><div id="root"></div><script type="text/babel">const {ChakraProvider,extendTheme,Box,Container,Heading,Text,Button,VStack,HStack,Stack,Flex,SimpleGrid}=ChakraUI;const theme=extendTheme({});${cleanCode} const root=ReactDOM.createRoot(document.getElementById('root'));root.render(<ChakraProvider theme={theme}><App/></ChakraProvider>);</script></body></html>`;
+    
+    const baseLibs = `
+      <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+      <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+      <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    `;
+
+    if (library === 'mui') return `<!DOCTYPE html><html><head>${baseLibs}<script src="https://unpkg.com/@mui/material@latest/umd/material-ui.production.min.js"></script><style>body { margin: 0; padding: 20px; background: transparent; color: #fff; }</style></head><body><div id="root"></div><script type="text/babel">const {ThemeProvider,createTheme,CssBaseline,Button,Container,Typography,Box,Card,CardContent,Grid,AppBar,Toolbar,IconButton,TextField}=MaterialUI;const theme=createTheme({palette:{mode:'dark'},shape:{borderRadius:12}});${cleanCode} const root=ReactDOM.createRoot(document.getElementById('root'));root.render(<ThemeProvider theme={theme}><CssBaseline/><App/></ThemeProvider>);</script></body></html>`;
+    if (library === 'chakra') return `<!DOCTYPE html><html><head>${baseLibs}<script src="https://unpkg.com/@chakra-ui/react@2.2.1/dist/chakra-ui.production.min.js"></script><style>body{margin:0;padding:20px;background: transparent; color: #fff;}</style></head><body><div id="root"></div><script type="text/babel">const {ChakraProvider,extendTheme,Box,Container,Heading,Text,Button,VStack,HStack,Stack,Flex,SimpleGrid}=ChakraUI;const theme=extendTheme({config:{initialColorMode:'dark'}});${cleanCode} const root=ReactDOM.createRoot(document.getElementById('root'));root.render(<ChakraProvider theme={theme}><App/></ChakraProvider>);</script></body></html>`;
     return cleanCode;
   };
 
   const generateArtifact = async (sessionId: string, artifactId: string, styleInstruction: string, promptText: string, library: UILibrary) => {
     try {
+      if (isOffline) throw new Error("Connection Lost. Check your internet.");
+      
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       if (library === 'image') {
         const modelName = config.hq ? 'gemini-3-pro-image-preview' : 'gemini-2.5-flash-image';
@@ -208,41 +200,44 @@ function AppContent() {
         updateArtifact(sessionId, artifactId, { html: imageHtml, status: 'complete' });
         return;
       }
-      const systemPrompt = `Create a breathtaking, functional ${library.toUpperCase()} component for: "${promptText}". Conceptual Style: ${styleInstruction}. Return ONLY functional code.`;
+      
+      const systemPrompt = `Create a functional ${library.toUpperCase()} component for: "${promptText}". Style: ${styleInstruction}. Return ONLY functional code. No commentary. Ensure it is accessible and uses modern best practices. Use a dark theme palette by default.`;
       const responseStream = await ai.models.generateContentStream({
         model: 'gemini-3-flash-preview',
         contents: [{ parts: [{ text: systemPrompt }], role: "user" }],
+        config: { tools: [{ googleSearch: {} }] } // Production grounding
       });
+      
       let accumulated = '';
       for await (const chunk of responseStream) {
         accumulated += chunk.text;
         const wrapped = wrapCodeInLibraryTemplate(accumulated, library);
         updateArtifact(sessionId, artifactId, { html: wrapped, status: 'streaming' });
       }
-      const final = wrapCodeInLibraryTemplate(accumulated, library);
-      updateArtifact(sessionId, artifactId, { html: final, status: 'complete' });
+      updateArtifact(sessionId, artifactId, { html: wrapCodeInLibraryTemplate(accumulated, library), status: 'complete' });
     } catch (e: any) {
-      updateArtifact(sessionId, artifactId, { status: 'error', html: JSON.stringify({ title: "Error", message: e.message || "Failed to generate.", solution: "Check your API key or connection." }) });
+      updateArtifact(sessionId, artifactId, { status: 'error', html: JSON.stringify({ title: "Error", message: e.message || "Failed to generate." }) });
     }
   };
 
   const handleSendMessage = useCallback(async (manualPrompt?: string) => {
-    const promptToUse = manualPrompt || inputValue;
-    const trimmed = promptToUse.trim();
-    if (!trimmed || isLoading) return;
+    const promptToUse = (manualPrompt || inputValue).trim();
+    if (!promptToUse || isLoading) return;
+    if (isOffline) return;
+    
     if (!manualPrompt) setInputValue('');
-
     setIsLoading(true);
-    setGlobalLoading(true, "Designing Concepts...");
+    setGlobalLoading(true, "Architecting Concepts...");
+    
     const sessionId = generateId();
-    const placeholderArtifacts: Artifact[] = Array(3).fill(null).map((_, i) => ({
+    const placeholders: Artifact[] = Array(3).fill(null).map((_, i) => ({
       id: `${sessionId}_${i}`,
-      styleName: 'Thinking...',
+      styleName: 'Reasoning...',
       html: '',
       status: 'streaming',
     }));
 
-    addSession({ id: sessionId, prompt: trimmed, timestamp: Date.now(), artifacts: placeholderArtifacts });
+    addSession({ id: sessionId, prompt: promptToUse, timestamp: Date.now(), artifacts: placeholders });
     setCurrentSessionIndex(sessions.length);
     setFocusedArtifactIndex(null);
 
@@ -250,32 +245,31 @@ function AppContent() {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const styleResp = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: { role: 'user', parts: [{ text: `Generate 3 creative design directions for: "${trimmed}". Return ONLY JSON array of 3 strings.` }] }
+        contents: { role: 'user', parts: [{ text: `Synthesize 3 distinct visual design directions (e.g. 'Cyberspace Brutalist', 'Neo-Glassmorphic', 'Swiss Tech Minimalist') for: "${promptToUse}". Return ONLY a JSON array of 3 strings.` }] }
       });
-      let styles = ["Concept A", "Concept B", "Concept C"];
+      let styles = ["Direction A", "Direction B", "Direction C"];
       try { styles = JSON.parse(styleResp.text?.match(/\[.*\]/s)?.[0] || '[]'); } catch { }
       styles.forEach((style, i) => updateArtifact(sessionId, `${sessionId}_${i}`, { styleName: style }));
-      setGlobalLoading(true, "Streaming Archetypes...");
-      await Promise.all(placeholderArtifacts.map((art, i) => generateArtifact(sessionId, art.id, styles[i] || 'Concept', trimmed, config.library)));
+      await Promise.all(placeholders.map((art, i) => generateArtifact(sessionId, art.id, styles[i], promptToUse, config.library)));
     } finally {
       setIsLoading(false);
       setGlobalLoading(false);
     }
-  }, [inputValue, isLoading, sessions.length, config.library, addSession, updateArtifact, setGlobalLoading]);
+  }, [inputValue, isLoading, sessions.length, config.library, addSession, updateArtifact, setGlobalLoading, isOffline]);
 
-  const prevItem = useCallback(() => {
+  const prevItem = () => {
     if (focusedArtifactIndex !== null) {
       if (focusedArtifactIndex > 0) setFocusedArtifactIndex(focusedArtifactIndex - 1);
       else if (currentSessionIndex > 0) { setCurrentSessionIndex(currentSessionIndex - 1); setFocusedArtifactIndex(2); }
     } else if (currentSessionIndex > 0) setCurrentSessionIndex(currentSessionIndex - 1);
-  }, [focusedArtifactIndex, currentSessionIndex]);
+  };
 
-  const nextItem = useCallback(() => {
+  const nextItem = () => {
     if (focusedArtifactIndex !== null) {
       if (focusedArtifactIndex < 2) setFocusedArtifactIndex(focusedArtifactIndex + 1);
       else if (currentSessionIndex < sessions.length - 1) { setCurrentSessionIndex(currentSessionIndex + 1); setFocusedArtifactIndex(0); }
     } else if (currentSessionIndex < sessions.length - 1) setCurrentSessionIndex(currentSessionIndex + 1);
-  }, [focusedArtifactIndex, currentSessionIndex, sessions.length]);
+  };
 
   const hasStarted = sessions.length > 0 || isLoading;
   const currentSession = sessions[currentSessionIndex];
@@ -284,17 +278,31 @@ function AppContent() {
     <>
       <DottedGlowBackground />
       <GlobalLoadingIndicator />
-      <a href="https://x.com/ammaar" target="_blank" rel="noreferrer" className={`creator-credit ${hasStarted ? 'hide-on-mobile' : ''}`}>created by @ammaar</a>
+      
+      {isOffline && (
+        <div className="network-status-toast">
+          <WarningIcon />
+          <span>Offline Mode: Previous artifacts are available locally.</span>
+        </div>
+      )}
 
-      {showInstallBanner && (
+      {updateAvailable && (
+        <div className="system-update-banner">
+          <SparklesIcon />
+          <span>New Studio updates are ready.</span>
+          <button onClick={() => window.location.reload()}>Apply Updates</button>
+        </div>
+      )}
+
+      {isInstallable && (
         <div className="install-banner">
           <div className="install-content">
             <SparklesIcon />
-            <span>Install Flash UI for a faster, offline-ready studio.</span>
+            <span>Install Flash UI for a native fullscreen experience.</span>
           </div>
           <div className="install-actions">
-            <button onClick={handleInstallClick} className="install-btn">Install Now</button>
-            <button onClick={handleDismissBanner} className="dismiss-btn" aria-label="Dismiss">&times;</button>
+            <button onClick={installApp} className="install-btn">Install Now</button>
+            <button onClick={() => {}} className="dismiss-btn">&times;</button>
           </div>
         </div>
       )}
@@ -315,8 +323,8 @@ function AppContent() {
           <div className={`empty-state ${hasStarted ? 'fade-out' : ''}`}>
             <div className="empty-content">
               <h1>Flash UI</h1>
-              <p>Design artifacts in an instant.</p>
-              <button className="surprise-button" onClick={() => handleSendMessage(INITIAL_PLACEHOLDERS[placeholderIndex])} disabled={isLoading}><SparklesIcon /> Surprise Me</button>
+              <p>Generation-first design system. Build components at the speed of thought.</p>
+              <button className="surprise-button" onClick={() => handleSendMessage(INITIAL_PLACEHOLDERS[placeholderIndex])} disabled={isLoading || isOffline}><SparklesIcon /> Surprise Me</button>
             </div>
           </div>
 
@@ -324,14 +332,20 @@ function AppContent() {
             <div key={session.id} className={`session-group ${sIndex === currentSessionIndex ? 'active-session' : sIndex < currentSessionIndex ? 'past-session' : 'future-session'}`}>
               <div className="artifact-grid">
                 {session.artifacts.map((artifact, aIndex) => (
-                  <ArtifactCard key={artifact.id} artifact={artifact} isFocused={focusedArtifactIndex === aIndex} onClick={() => setFocusedArtifactIndex(aIndex)} onRetry={(id) => generateArtifact(session.id, id, artifact.styleName, session.prompt, config.library)} />
+                  <ArtifactCard 
+                    key={artifact.id} 
+                    artifact={artifact} 
+                    isFocused={focusedArtifactIndex === aIndex} 
+                    onClick={() => setFocusedArtifactIndex(aIndex)} 
+                    onRetry={(id) => generateArtifact(session.id, id, artifact.styleName, session.prompt, config.library)} 
+                  />
                 ))}
               </div>
             </div>
           ))}
         </div>
 
-        {hasStarted && (currentSessionIndex > 0 || (focusedArtifactIndex && focusedArtifactIndex > 0)) && <button className="nav-handle left" onClick={prevItem} aria-label="Previous"><ArrowLeftIcon /></button>}
+        {hasStarted && (currentSessionIndex > 0 || (focusedArtifactIndex !== null && focusedArtifactIndex > 0)) && <button className="nav-handle left" onClick={prevItem} aria-label="Previous"><ArrowLeftIcon /></button>}
         {hasStarted && (currentSessionIndex < sessions.length - 1 || (focusedArtifactIndex !== null && focusedArtifactIndex < 2)) && <button className="nav-handle right" onClick={nextItem} aria-label="Next"><ArrowRightIcon /></button>}
 
         <div className={`action-bar ${focusedArtifactIndex !== null ? 'visible' : (hasStarted && !isLoading ? 'visible' : '')}`}>
@@ -339,23 +353,19 @@ function AppContent() {
           <div className="action-buttons">
             {focusedArtifactIndex !== null ? (
               <>
-                <button onClick={() => setFocusedArtifactIndex(null)} data-tooltip="Return to Grid View"><GridIcon /> Grid</button>
-                <button onClick={() => handleSendMessage(currentSession?.prompt)} disabled={isLoading} data-tooltip="Regenerate all 3 artifacts"><RotateCcwIcon /> Regenerate All</button>
-                <button onClick={() => setDrawerState({ isOpen: true, mode: 'code', title: 'Source Code', data: currentSession?.artifacts[focusedArtifactIndex].html })} data-tooltip="View Source Code"><CodeIcon /> Source</button>
+                <button onClick={() => setFocusedArtifactIndex(null)}><GridIcon /> Close Preview</button>
+                <button onClick={() => setDrawerState({ isOpen: true, mode: 'code', title: 'Component Source', data: currentSession?.artifacts[focusedArtifactIndex].html })}><CodeIcon /> View Source</button>
               </>
             ) : (
               hasStarted && !isLoading && (
-                <>
-                  <button onClick={() => handleSendMessage(currentSession?.prompt)} data-tooltip="Regenerate current prompt"><RotateCcwIcon /> Regenerate All</button>
-                  <button onClick={() => { setInputValue(''); inputRef.current?.focus(); }} data-tooltip="Clear input and start over"><PlusIcon /> New Draft</button>
-                </>
+                <button onClick={() => handleSendMessage(currentSession?.prompt)} disabled={isOffline}><RotateCcwIcon /> Regenerate All</button>
               )
             )}
           </div>
         </div>
 
         <div className="floating-input-container">
-          <div className={`input-wrapper ${isLoading ? 'loading' : ''}`}>
+          <div className={`input-wrapper ${isLoading ? 'loading' : ''} ${isOffline ? 'offline' : ''}`}>
             <div className="library-selector">
               {(['vanilla', 'mui', 'chakra', 'image'] as UILibrary[]).map((lib) => (
                 <button 
@@ -363,48 +373,41 @@ function AppContent() {
                   className={`lib-btn ${config.library === lib ? 'active' : ''}`} 
                   onClick={() => setLibrary(lib)}
                   data-tooltip={LIBRARY_TOOLTIPS[lib]}
-                  aria-label={LIBRARY_TOOLTIPS[lib]}
                 >
                   {lib.charAt(0).toUpperCase()}
                 </button>
               ))}
             </div>
             {config.library === 'image' && (
-              <div className="hq-toggle-box" data-tooltip="High-Quality Mode (Gemini 3 Pro Image)">
+              <div className="hq-toggle-box" data-tooltip="Pro Model (Paid Tier Required)">
                 <span className="hq-label">HQ</span>
                 <input type="checkbox" checked={config.hq} onChange={(e) => setHqMode(e.target.checked)} />
               </div>
             )}
-            {!isLoading ? (
-              <input 
-                ref={inputRef} 
-                type="text" 
-                value={inputValue} 
-                onChange={(e) => setInputValue(e.target.value)} 
-                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} 
-                placeholder={INITIAL_PLACEHOLDERS[placeholderIndex]} 
-              />
-            ) : (
-              <div className="input-generating-label"><ThinkingIcon /> Designing...</div>
-            )}
-            <button 
-              className="send-button" 
-              onClick={() => handleSendMessage()} 
-              disabled={isLoading || !inputValue.trim()}
-              data-tooltip="Generate Artifacts (Enter)"
-            >
+            <input 
+              ref={inputRef} 
+              type="text" 
+              value={inputValue} 
+              onChange={(e) => setInputValue(e.target.value)} 
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} 
+              placeholder={isOffline ? "Currently Offline..." : INITIAL_PLACEHOLDERS[placeholderIndex]} 
+              disabled={isLoading || isOffline}
+            />
+            <button className="send-button" onClick={() => handleSendMessage()} disabled={isLoading || isOffline || !inputValue.trim()}>
               <ArrowUpIcon />
             </button>
           </div>
         </div>
 
         <div className="utility-bar">
-          <button className="utility-btn" onClick={() => setIsVaultOpen(true)} data-tooltip="Secure API Key Management"><SparklesIcon /> <span>Vault</span></button>
-          <button className="utility-btn" onClick={() => setIsTerminalOpen(true)} data-tooltip="Developer Command Line"><CodeIcon /> <span>Terminal</span></button>
+          <button className="utility-btn" onClick={() => setIsVaultOpen(true)} aria-label="Open Vault"><SparklesIcon /> <span>Vault</span></button>
+          <button className="utility-btn" onClick={() => setIsTerminalOpen(true)} aria-label="Open CLI"><CodeIcon /> <span>CLI</span></button>
         </div>
 
-        <Terminal isOpen={isTerminalOpen} onClose={() => setIsTerminalOpen(false)} />
-        <KeyManager isOpen={isVaultOpen} onClose={() => setIsVaultOpen(false)} />
+        <Suspense fallback={null}>
+          <Terminal isOpen={isTerminalOpen} onClose={() => setIsTerminalOpen(false)} />
+          <KeyManager isOpen={isVaultOpen} onClose={() => setIsVaultOpen(false)} />
+        </Suspense>
       </div>
     </>
   );
