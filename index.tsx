@@ -54,15 +54,29 @@ function usePWA() {
 
   useEffect(() => {
     const handleBeforeInstall = (e: any) => {
+      // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
       setDeferredPrompt(e);
-      setIsInstallable(true);
+      
+      // Check local storage to prevent spamming the user if they dismissed it permanently
+      const isDismissed = localStorage.getItem('pwa_install_dismissed');
+      if (!isDismissed) {
+        setIsInstallable(true);
+      }
+    };
+
+    const handleAppInstalled = () => {
+      // Hide the prompt if the user installed the app (via banner or browser menu)
+      setIsInstallable(false);
+      setDeferredPrompt(null);
+      console.log('Flash UI was successfully installed.');
     };
 
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
@@ -91,6 +105,7 @@ function usePWA() {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -98,20 +113,30 @@ function usePWA() {
 
   const installApp = async () => {
     if (!deferredPrompt) return;
+    
+    // Show the install prompt
     deferredPrompt.prompt();
+    
+    // Wait for the user to respond to the prompt
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setIsInstallable(false);
-      setDeferredPrompt(null);
-    }
+    console.log(`User response to the install prompt: ${outcome}`);
+    
+    // We've used the prompt, and can't use it again, discard it
+    setDeferredPrompt(null);
+    setIsInstallable(false);
   };
 
-  return { isInstallable, isOffline, updateAvailable, installApp };
+  const dismissInstall = () => {
+    setIsInstallable(false);
+    localStorage.setItem('pwa_install_dismissed', 'true');
+  };
+
+  return { isInstallable, isOffline, updateAvailable, installApp, dismissInstall };
 }
 
 function AppContent() {
   const { sessions, config, addSession, updateArtifact, setLibrary, setHqMode, setGlobalLoading } = useStorage();
-  const { isInstallable, isOffline, updateAvailable, installApp } = usePWA();
+  const { isInstallable, isOffline, updateAvailable, installApp, dismissInstall } = usePWA();
   
   const [currentSessionIndex, setCurrentSessionIndex] = useState<number>(-1);
   const [focusedArtifactIndex, setFocusedArtifactIndex] = useState<number | null>(null);
@@ -302,7 +327,7 @@ function AppContent() {
           </div>
           <div className="install-actions">
             <button onClick={installApp} className="install-btn">Install Now</button>
-            <button onClick={() => {}} className="dismiss-btn">&times;</button>
+            <button onClick={dismissInstall} className="dismiss-btn">&times;</button>
           </div>
         </div>
       )}
