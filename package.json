@@ -1,7 +1,7 @@
 {
-  "name": "flash-ui",
+  "name": "ai-integration-map",
   "private": true,
-  "version": "0.0.0",
+  "version": "2025.12.29",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,13 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^0.7.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "dexie": "^4.0.1"
+    "react-router-dom": "^7.11.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
