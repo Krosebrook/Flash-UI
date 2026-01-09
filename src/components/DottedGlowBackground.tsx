@@ -56,7 +56,7 @@ export default function DottedGlowBackground({
     };
 
     // Throttled resize handler to improve performance
-    let resizeTimeout: number;
+    let resizeTimeout: ReturnType<typeof setTimeout>;
     const resize = () => {
       const { width, height } = container.getBoundingClientRect();
       el.width = Math.max(1, Math.floor(width * dpr));
@@ -68,7 +68,7 @@ export default function DottedGlowBackground({
 
     const throttledResize = () => {
       clearTimeout(resizeTimeout);
-      resizeTimeout = window.setTimeout(resize, 100);
+      resizeTimeout = setTimeout(resize, 100);
     };
 
     const ro = new ResizeObserver(throttledResize);
