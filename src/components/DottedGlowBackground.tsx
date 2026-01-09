@@ -56,7 +56,7 @@ export default function DottedGlowBackground({
     };
 
     // Throttled resize handler to improve performance
-    let resizeTimeout: ReturnType<typeof setTimeout>;
+    let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
     const resize = () => {
       const { width, height } = container.getBoundingClientRect();
       el.width = Math.max(1, Math.floor(width * dpr));
@@ -67,7 +67,9 @@ export default function DottedGlowBackground({
     };
 
     const throttledResize = () => {
-      clearTimeout(resizeTimeout);
+      if (resizeTimeout !== undefined) {
+        clearTimeout(resizeTimeout);
+      }
       resizeTimeout = setTimeout(resize, 100);
     };
 
@@ -136,7 +138,9 @@ export default function DottedGlowBackground({
     return () => {
       stopped = true;
       cancelAnimationFrame(raf);
-      clearTimeout(resizeTimeout);
+      if (resizeTimeout !== undefined) {
+        clearTimeout(resizeTimeout);
+      }
       window.removeEventListener("resize", regenDots);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       ro.disconnect();
