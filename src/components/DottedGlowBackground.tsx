@@ -41,9 +41,25 @@ export default function DottedGlowBackground({
 
     let raf = 0;
     let stopped = false;
+    let isVisible = true;
 
     const dpr = Math.max(1, window.devicePixelRatio || 1);
+    
+    // Performance optimization constants
+    const RESIZE_THROTTLE_MS = 100;
 
+    // Pause animation when tab is not visible to save resources
+    const handleVisibilityChange = () => {
+      isVisible = !document.hidden;
+      if (isVisible && !stopped) {
+        raf = requestAnimationFrame(draw);
+      } else {
+        cancelAnimationFrame(raf);
+      }
+    };
+
+    // Throttled resize handler to improve performance
+    let resizeTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
     const resize = () => {
       const { width, height } = container.getBoundingClientRect();
       el.width = Math.max(1, Math.floor(width * dpr));
@@ -53,7 +69,14 @@ export default function DottedGlowBackground({
       ctx.scale(dpr, dpr);
     };
 
-    const ro = new ResizeObserver(resize);
+    const throttledResize = () => {
+      if (resizeTimeout !== undefined) {
+        clearTimeout(resizeTimeout);
+      }
+      resizeTimeout = setTimeout(resize, RESIZE_THROTTLE_MS);
+    };
+
+    const ro = new ResizeObserver(throttledResize);
     ro.observe(container);
     setTimeout(resize, 0);
 
@@ -80,9 +103,10 @@ export default function DottedGlowBackground({
 
     regenDots();
     window.addEventListener("resize", regenDots);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const draw = (now: number) => {
-      if (stopped) return;
+      if (stopped || !isVisible) return;
       const { width, height } = container.getBoundingClientRect();
       ctx.clearRect(0, 0, width, height);
       ctx.globalAlpha = opacity;
@@ -117,7 +141,11 @@ export default function DottedGlowBackground({
     return () => {
       stopped = true;
       cancelAnimationFrame(raf);
+      if (resizeTimeout !== undefined) {
+        clearTimeout(resizeTimeout);
+      }
       window.removeEventListener("resize", regenDots);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       ro.disconnect();
     };
   }, [gap, radius, color, glowColor, opacity, speedMin, speedMax, speedScale]);
